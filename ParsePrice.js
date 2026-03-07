@@ -290,24 +290,71 @@ function updateSessionStats() {
 }
 
 function updateBeliefFromPrice() {
-  if (!state.vaticData || state.lastPrice == null) return;
-  const target = getTarget();
-  if (!target) return;
-  const diff = (state.lastPrice - target) / target;
-  const delta = Math.max(-0.1, Math.min(0.1, diff * 0.02));
-  const eps = 1e-6;
-  const p0 = Math.min(1 - eps, Math.max(eps, state.beliefUp));
-  const l = Math.log(p0 / (1 - p0)) + delta;
-  state.beliefUp = 1 / (1 + Math.exp(-l));
-  updateEdge();
+  if (!state.vaticData || state.lastPrice == null) return
+  const target = getTarget()
+  if (!target) return
+
+  const price = state.lastPrice
+  const relDiff = (price - target) / target
+
+  const prices = state.priceHistory
+  let vol = 0.005
+  if (prices.length >= 10) {
+    const tail = prices.slice(-10)
+    const mean = tail.reduce((a, b) => a + b, 0) / tail.length
+    const varSum = tail.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+    const std = Math.sqrt(varSum / tail.length)
+    vol = std / mean || vol
+  }
+
+  const cfg = getTimeConfig()
+  const now = Date.now() / 1000
+  const slotStart = Math.floor(now / cfg.seconds) * cfg.seconds
+  const progress = (now - slotStart) / cfg.seconds
+  const timeFactor = 0.3 + 0.7 * progress
+
+  const signal = relDiff / (vol + 1e-6)
+  const baseStep = 0.01
+  let delta = baseStep * signal * timeFactor
+  const maxStep = 0.12
+  if (delta > maxStep) delta = maxStep
+  if (delta < -maxStep) delta = -maxStep
+
+  const eps = 1e-6
+  const p0 = Math.min(1 - eps, Math.max(eps, state.beliefUp))
+  const logit0 = Math.log(p0 / (1 - p0))
+  const logit1 = logit0 + delta
+  const p1 = 1 / (1 + Math.exp(-logit1))
+
+  const smooth = 0.7
+  state.beliefUp = smooth * p0 + (1 - smooth) * p1
+
+  updateEdge()
 }
 
 function updateMarketProb() {
-  if (!state.vaticData || state.lastPrice == null) return;
-  const target = getTarget();
-  if (!target) return;
-  state.marketProb = sigmaProb(state.lastPrice, target);
-  updateEdge();
+  if (!state.vaticData || state.lastPrice == null) return
+  const target = getTarget()
+  if (!target) return
+
+  const price = state.lastPrice
+  const rel = (price - target) / target
+  const vol = (() => {
+    const prices = state.priceHistory
+    if (prices.length < 10) return 0.005
+    const tail = prices.slice(-10)
+    const mean = tail.reduce((a, b) => a + b, 0) / tail.length
+    const varSum = tail.reduce((acc, v) => acc + (v - mean) ** 2, 0)
+    const std = Math.sqrt(varSum / tail.length)
+    return std / mean || 0.005
+  })()
+
+  const scale = 4 / (vol + 1e-6)
+  const x = scale * rel
+  const p = 1 / (1 + Math.exp(-x))
+  state.marketProb = Math.min(0.98, Math.max(0.02, p))
+
+  updateEdge()
 }
 
 function updateEdge() {
