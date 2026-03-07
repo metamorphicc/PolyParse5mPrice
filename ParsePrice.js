@@ -475,17 +475,13 @@ function setupTUI() {
     },
   });
 
-  // правая колонка
-  priceLine = grid.set(2, 4, 4, 8, contrib.line, {
+  priceLine = grid.set(2, 4, 4, 8, contrib.sparkline, {
     label: " PRICE ",
+    tags: true,
     style: {
-      line: COLORS.accent,
-      text: COLORS.text,
-      baseline: COLORS.gray,
+      fg: COLORS.accent,
+      border: { fg: COLORS.accent },
     },
-    xLabelPadding: 3,
-    xPadding: 1,
-    showLegend: false,
   });
 
   analyticsBox = grid.set(6, 4, 3, 8, blessed.box, {
@@ -694,12 +690,17 @@ function renderSignalsBox() {
 function renderPriceLine() {
   const prices = state.priceHistory;
   if (!prices.length) {
-    priceLine.setData([{ title: "price", x: [""], y: [0] }]);
+    priceLine.setData([""], [[0]]);
     return;
   }
-  const tail = prices.slice(-80);
-  const x = tail.map((_, i) => String(i));
-  priceLine.setData([{ title: "price", x, y: tail }]);
+  const tail = prices.slice(-50);
+  const normalized = (() => {
+    const min = Math.min(...tail);
+    const max = Math.max(...tail);
+    if (max === min) return tail.map(() => 1);
+    return tail.map((v) => ((v - min) / (max - min)) * 10 + 1);
+  })();
+  priceLine.setData([`${state.asset.toUpperCase()} price`], [normalized]);
 }
 
 function render() {
